@@ -163,7 +163,7 @@ def make_backup(home, store, found, first, progress):  # 所有实际修改前�
         for role, path in found.items():  # 逐个数据库备份并显示实际进度。
             require_closed()  # 备份过程中重新打开 Codex 会阻止后续提交。
             progress(f"首次备份：{role}（{path.name}），请等待…")  # 向界面报告当前工作。
-            relative = path.relative_to(home)  # 保留本机数据目录内的相对层级。
+            relative = path.resolve().relative_to(home.resolve())  # 先统一 Windows 长路径和 8.3 短路径，再确认数据库位于所选目录内。
             destination = folder / "databases" / relative  # 数据库副本只写入备份目录。
             destination.parent.mkdir(parents=True, exist_ok=True)  # 创建必要的内部目录。
             with contextlib.closing(connect_readonly(path)) as source:  # 来源始终只读。
