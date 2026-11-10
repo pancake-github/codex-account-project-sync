@@ -2,7 +2,7 @@
 
 本项目自己的源码采用 MIT 许可证。
 
-Windows 独立 EXE 自带 CPython、Tcl/Tk 以及 PyInstaller bootloader。构建流程从实际使用的独立构建环境收集许可文本，嵌入 EXE，并在 Windows ZIP 的 `licenses/` 目录保留可直接阅读的副本。
+Windows 独立 EXE 自带 CPython、Tcl/Tk 以及 PyInstaller bootloader。构建流程从实际使用的独立构建环境收集许可文本；安装包缺少 Tcl/Tk 许可文本时，按实际运行时补丁版本，从官方 tcltk 源码仓库的对应版本标签取得。许可嵌入 EXE，并在 Windows ZIP 的 `licenses/` 目录保留可直接阅读的副本。
 
 - CPython：Python Software Foundation 许可及其安装包所附第三方说明，见 `Python-LICENSE.txt`。
 - Tcl/Tk：所分发运行时附带的 `tcl-license.terms` 和 `tk-license.terms`。

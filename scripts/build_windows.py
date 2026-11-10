@@ -4,13 +4,25 @@ import hashlib  # 生成最终分发文件的 SHA-256。
 import importlib.metadata  # 查找构建依赖随安装包提供的许可证。
 import os  # 使用当前 Windows 平台的参数路径分隔符。
 from pathlib import Path  # 所有产物都放在仓库自己的 dist 目录。
+import re  # 限定可用于官方版本标签的运行时版本格式。
 import shutil  # 仅复制公开运行时的许可文本。
 import subprocess  # 以明确参数运行 PyInstaller 和 Git。
 import sys  # 使用构建环境自己的 Python，不调用开发者的固定环境。
 import zipfile  # 打包无需安装的 Windows 下载包。
+import urllib.request  # 构建时仅从运行时官方源码仓库取得缺失的同版本许可。
 
 ROOT = Path(__file__).resolve().parents[1]  # 构建源限定为当前公开仓库。
 VERSION = "v0.1.0-beta.1"  # 与初始 Release 标签保持一致。
+
+
+def runtime_versions():  # 查询实际分发的 Tcl 与 Tk 补丁版本。
+    import tkinter  # 只在构建时创建测试窗口，不扫描任何用户资料。
+    window = tkinter.Tk()  # 与之后的 EXE 启动检查采用相同 GUI 运行时。
+    window.withdraw()  # 构建查询不向使用者显示交互窗口。
+    try:  # 不从文件夹名猜测具体补丁版本。
+        return window.tk.call("info", "patchlevel"), window.tk.call("package", "present", "Tk")  # 分别返回 Tcl 与 Tk 的实际版本。
+    finally:  # 版本查询后立即释放构建测试窗口。
+        window.destroy()  # 不留后台界面进程。
 
 
 def runtime_licenses(dist):  # 分发自带 Python/Tcl/Tk 的 EXE 时同时保留运行时许可。
@@ -18,11 +30,23 @@ def runtime_licenses(dist):  # 分发自带 Python/Tcl/Tk 的 EXE 时同时保�
     directory.mkdir(parents=True, exist_ok=True)  # 不修改 Python 安装目录。
     base = Path(sys.base_prefix)  # 构建环境的公开 CPython 安装位置。
     inputs = [("Python-LICENSE.txt", base / "LICENSE.txt")]  # CPython Windows 安装包附带完整 PSF 许可及第三方说明。
-    for name in ("tcl", "tk"):  # Tcl 与 Tk 各自的许可都保留。
+    versions = None  # 仅在安装目录缺少许可文件时查询运行时补丁版本。
+    for index, name in enumerate(("tcl", "tk")):  # Tcl 与 Tk 各自的许可都保留。
         candidates = sorted((base / "tcl").glob(f"{name}*/license.terms"))  # 从实际安装的 Tk 运行时取许可，避免贴错版本。
-        if not candidates:  # 未找到所分发运行时的许可时不默默省略。
-            raise RuntimeError(f"Missing bundled {name} runtime license")  # 停止这次分发构建。
-        inputs.append((f"{name}-license.terms", candidates[0]))  # 使用清楚且不冲突的文件名。
+        if candidates:  # 安装包提供原始许可时直接保留。
+            inputs.append((f"{name}-license.terms", candidates[0]))  # 使用清楚且不冲突的文件名。
+        else:  # CPython 的部分 Windows 安装包没有保留这两个文本文件。
+            versions = versions or runtime_versions()  # 使用实际载入的 Tcl/Tk 版本。
+            version = str(versions[index])  # 分别匹配所分发的运行时。
+            if not re.fullmatch(r"\d+\.\d+\.\d+", version):  # 不根据未知版本格式猜测源码标签。
+                raise RuntimeError("Unsupported Tcl/Tk patch-level format")  # 未知格式停止打包。
+            url = f"https://raw.githubusercontent.com/tcltk/{name}/core-{version.replace('.', '-')}/license.terms"  # 官方源码仓库中的精确版本标签。
+            with urllib.request.urlopen(url, timeout=30) as response:  # 保留正常 TLS 校验，不使用不安全绕过。
+                data = response.read()  # 只下载公开许可文本。
+            data.decode("utf-8")  # 拒绝错误编码或意外二进制响应。
+            if len(data) < 500:  # 防止空文件或明显错误的响应被当作许可。
+                raise RuntimeError("Incomplete Tcl/Tk license response")  # 不继续构建缺少许可的二进制。
+            (directory / f"{name}-license.terms").write_bytes(data)  # 将同版本原文放入构建资产。
     distribution = importlib.metadata.distribution("pyinstaller")  # 构建器的 bootloader 许可例外随其发行包提供。
     copying = next((entry for entry in distribution.files or [] if entry.name.lower() == "copying.txt"), None)  # 使用已安装版本的原始许可文本。
     if copying is not None:  # 新版 wheel 提供该文件时一并分发。
